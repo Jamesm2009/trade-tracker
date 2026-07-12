@@ -17,7 +17,7 @@ export default function Dashboard() {
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch('/api/data');
+      const res = await fetch('/api/data', { cache: 'no-store' });
       if (!res.ok) throw new Error('Failed to load data');
       const json = await res.json();
       setData(json);
