@@ -1,225 +1,240 @@
 'use client';
+import { useState, useRef } from 'react';
 
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+export default function AdminTab({ data, onRefresh }) {
+  const [activeForm, setActiveForm] = useState('seed');
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const fileRef = useRef(null);
 
-const PIE_COLORS = [
-  '#2a3f55', '#4a7c9e', '#6a9dbe', '#8dbddb',
-  '#a89272', '#c9b899', '#e3d5bf', '#8a7356',
-  '#2d8a4e', '#c0392b', '#6b5b8d', '#d4a574',
-];
+  // Balance form state
+  const [balDate, setBD] = useState(new Date().toISOString().split('T')[0]);
+  const [balAmt, setBA] = useState('');
+  const [balC, setBC] = useState('');
 
-function fmt(n, decimals = 0) {
-  if (n == null) return '—';
-  const sign = n < 0 ? '-' : '';
-  return sign + '$' + Math.abs(n).toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
-}
+  // Trade form state
+  const [tradeNum, setTN] = useState('');
+  const [tradeDate, setTDate] = useState(new Date().toISOString().split('T')[0]);
+  const [tradeDesc, setTDe] = useState('');
+  const [tradeSold, setTS] = useState('');
+  const [tradeBought, setTB] = useState('');
+  const [tradeFundsSold, setTFS] = useState('');
+  const [tradeFundsBought, setTFB] = useState('');
+  const [tradeNotes, setTNo] = useState('');
+  const [tradeRegime, setTR] = useState('');
+  const [tradeStatus, setTSt] = useState('Open');
 
-function pct(n) {
-  if (n == null) return '—';
-  return (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
-}
+  async function submitForm(action, payload) {
+    setLoading(true);
+    setStatus(null);
+    try {
+      const res = await fetch('/api/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, payload }),
+      });
+      if (res.ok) {
+        setStatus({ type: 'success', msg: 'Saved successfully' });
+        if (onRefresh) onRefresh();
+      } else {
+        const err = await res.json();
+        setStatus({ type: 'error', msg: err.error || 'Save failed' });
+      }
+    } catch (e) {
+      setStatus({ type: 'error', msg: e.message });
+    }
+    setLoading(false);
+  }
 
-export default function PortfolioTab({ data }) {
-  const { account, ytdSummary, transactions, fundUniverse } = data;
+  async function handleSeed() {
+    const file = fileRef.current?.files?.[0];
+    if (!file) {
+      setStatus({ type: 'error', msg: 'Please select your xlsx file first' });
+      return;
+    }
+    setLoading(true);
+    setStatus({ type: 'info', msg: 'Uploading and processing spreadsheet… this may take 15–30 seconds.' });
 
-  const openingBalance = ytdSummary?.beginning_balance || 56248.10;
-  const currentBalance = ytdSummary?.ending_balance || account?.balance || 61221.54;
-  const totalDeposits = ytdSummary?.total_deposits || 3127.81;
-  const totalDividends = ytdSummary?.total_dividends || 898.73;
-  const totalFees = ytdSummary?.total_fees || -120.37;
-  const totalChange = ytdSummary?.total_change || 1067.27;
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
 
-  const ytdReturn = currentBalance - openingBalance;
-  const ytdReturnPct = (ytdReturn / openingBalance) * 100;
-  const newMoney = totalDeposits;
-  const marketReturn = ytdReturn - newMoney;
-  const marketReturnPct = (marketReturn / openingBalance) * 100;
+      const res = await fetch('/api/seed', { method: 'POST', body: formData });
+      const json = await res.json();
 
-  // Allocation from YTD summary fund data
-  const fundData = ytdSummary?.funds || [];
-  const allocData = fundData
-    .filter(f => f.ending_balance > 0)
-    .sort((a, b) => b.ending_balance - a.ending_balance)
-    .map(f => ({
-      name: f.fund.length > 25 ? f.ticker : f.fund,
-      value: f.ending_balance,
-      ticker: f.ticker,
-      fullName: f.fund,
-    }));
+      if (res.ok) {
+        const r = json.results;
+        setStatus({
+          type: 'success',
+          msg: `Seed complete! Loaded ${r.transactions} transactions, ${r.transferDetail} transfer details, ${r.trades} trades, ${r.dividendDetail} dividends, ${r.ytdFunds} fund summaries, ${r.fundUniverse} funds, ${r.weeklyBalance} balance entries, ${r.fundPrices} price entries.`,
+        });
+        if (onRefresh) onRefresh();
+      } else {
+        setStatus({ type: 'error', msg: json.error || 'Seed failed' });
+      }
+    } catch (e) {
+      setStatus({ type: 'error', msg: e.message });
+    }
+    setLoading(false);
+  }
 
-  const totalAlloc = allocData.reduce((s, d) => s + d.value, 0);
+  const inputStyle = {
+    padding: '10px 14px', fontSize: 14,
+    border: '1px solid var(--sand-200)', borderRadius: 'var(--radius)',
+    outline: 'none', width: '100%', background: 'white',
+  };
+  const labelStyle = {
+    fontSize: 12, fontWeight: 600, color: 'var(--text-light)',
+    textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4, display: 'block',
+  };
 
-  // Source breakdown
-  const sources = ytdSummary?.sources || [];
-
-  // Weekly balance history
-  const balanceHistory = data.weeklyBalance || [];
+  const forms = [
+    { id: 'seed', label: 'Seed Data' },
+    { id: 'balance', label: 'Weekly Balance' },
+    { id: 'trade', label: 'Trade Decision' },
+  ];
 
   return (
-    <div style={{ display: 'grid', gap: 20 }}>
-      {/* Top metrics row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
-        <div className="card">
-          <div className="card-header">Current Balance</div>
-          <div className="metric-value">{fmt(currentBalance)}</div>
-          <div className="metric-label">As of {account?.as_of_date || '7/9/2026'}</div>
-        </div>
-
-        <div className="card">
-          <div className="card-header">YTD Return</div>
-          <div className={`metric-value ${ytdReturn >= 0 ? 'gain' : 'loss'}`}>
-            {fmt(ytdReturn)}
-          </div>
-          <div className="metric-label">{pct(ytdReturnPct)}</div>
-        </div>
-
-        <div className="card">
-          <div className="card-header">Market Return</div>
-          <div className={`metric-value ${marketReturn >= 0 ? 'gain' : 'loss'}`}>
-            {fmt(marketReturn)}
-          </div>
-          <div className="metric-label">{pct(marketReturnPct)}</div>
-        </div>
-
-        <div className="card">
-          <div className="card-header">New Money</div>
-          <div className="metric-value" style={{ color: 'var(--blue-500)' }}>
-            {fmt(newMoney)}
-          </div>
-          <div className="metric-label">Contributions + Dividends</div>
-        </div>
+    <div style={{ display: 'grid', gap: 16, maxWidth: 700 }}>
+      {/* Form selector */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {forms.map(f => (
+          <button
+            key={f.id}
+            onClick={() => { setActiveForm(f.id); setStatus(null); }}
+            style={{
+              padding: '8px 20px', fontSize: 13, fontWeight: 600,
+              color: activeForm === f.id ? 'white' : 'var(--text-mid)',
+              background: activeForm === f.id ? 'var(--navy-800)' : 'var(--sand-100)',
+              border: 'none', borderRadius: 'var(--radius)', cursor: 'pointer',
+            }}
+          >
+            {f.label}
+          </button>
+        ))}
       </div>
 
-      {/* Return attribution + allocation */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        {/* Attribution */}
+      {/* Status */}
+      {status && (
+        <div style={{
+          padding: '12px 16px', borderRadius: 'var(--radius)', fontSize: 14, lineHeight: 1.6,
+          fontWeight: status.type === 'info' ? 500 : 600,
+          background: status.type === 'success' ? 'var(--green-bg)' : status.type === 'error' ? 'var(--red-bg)' : 'var(--ivory)',
+          color: status.type === 'success' ? 'var(--green-gain)' : status.type === 'error' ? 'var(--red-loss)' : 'var(--text-mid)',
+        }}>
+          {status.msg}
+        </div>
+      )}
+
+      {/* ===== SEED DATA ===== */}
+      {activeForm === 'seed' && (
         <div className="card">
-          <div className="card-header">Return Attribution</div>
-          <div style={{ display: 'grid', gap: 12, marginTop: 8 }}>
-            {[
-              { label: 'Opening Balance', value: fmt(openingBalance), color: 'var(--text-dark)' },
-              { label: 'Contributions', value: '+' + fmt(totalDeposits), color: 'var(--blue-500)' },
-              { label: 'Dividends', value: '+' + fmt(totalDividends), color: 'var(--green-gain)' },
-              { label: 'Fees / Expenses', value: fmt(totalFees), color: 'var(--red-loss)' },
-              { label: 'Market Change', value: (totalChange >= 0 ? '+' : '') + fmt(totalChange), color: totalChange >= 0 ? 'var(--green-gain)' : 'var(--red-loss)' },
-            ].map(row => (
-              <div key={row.label} style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '8px 0',
-                borderBottom: '1px solid var(--sand-100)',
-              }}>
-                <span style={{ fontSize: 14, color: 'var(--text-mid)' }}>{row.label}</span>
-                <span style={{ fontSize: 15, fontWeight: 600, color: row.color }}>{row.value}</span>
-              </div>
-            ))}
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              padding: '10px 0 0',
-              borderTop: '2px solid var(--navy-800)',
-            }}>
-              <span style={{ fontSize: 15, fontWeight: 700 }}>Ending Balance</span>
-              <span style={{ fontSize: 17, fontWeight: 700, color: 'var(--navy-800)' }}>
-                {fmt(currentBalance)}
-              </span>
+          <div className="card-header">Load Spreadsheet Data</div>
+          <div style={{ fontSize: 14, color: 'var(--text-mid)', marginBottom: 16, lineHeight: 1.6 }}>
+            Upload your <strong>401k_Trade_Tracker</strong> xlsx file to populate all dashboard tabs
+            with transactions, transfers, dividends, fund data, and trade decisions.
+            This replaces any existing data in Redis.
+          </div>
+          <div style={{ display: 'grid', gap: 16 }}>
+            <div>
+              <label style={labelStyle}>Spreadsheet File (.xlsx)</label>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx,.xls"
+                style={{
+                  ...inputStyle,
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                }}
+              />
             </div>
+            <button
+              disabled={loading}
+              onClick={handleSeed}
+              style={{
+                padding: '14px', fontSize: 15, fontWeight: 600, color: 'white',
+                background: loading ? 'var(--blue-400)' : 'var(--green-gain)',
+                border: 'none', borderRadius: 'var(--radius)',
+                cursor: loading ? 'wait' : 'pointer',
+              }}
+            >
+              {loading ? 'Processing spreadsheet…' : 'Upload & Seed Redis'}
+            </button>
           </div>
         </div>
+      )}
 
-        {/* Allocation pie */}
+      {/* ===== WEEKLY BALANCE ===== */}
+      {activeForm === 'balance' && (
         <div className="card">
-          <div className="card-header">Current Allocation</div>
-          {allocData.length > 0 ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              <div style={{ width: 200, height: 200 }}>
-                <ResponsiveContainer>
-                  <PieChart>
-                    <Pie
-                      data={allocData}
-                      dataKey="value"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={50}
-                      outerRadius={85}
-                      paddingAngle={2}
-                    >
-                      {allocData.map((_, i) => (
-                        <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(val) => fmt(val)}
-                      contentStyle={{ fontSize: 13, borderRadius: 8 }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div style={{ flex: 1, fontSize: 13 }}>
-                {allocData.map((d, i) => (
-                  <div key={i} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '3px 0',
-                  }}>
-                    <span style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: 2,
-                      background: PIE_COLORS[i % PIE_COLORS.length],
-                      flexShrink: 0,
-                    }} />
-                    <span style={{ flex: 1, color: 'var(--text-mid)' }}>{d.ticker || d.name}</span>
-                    <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                      {((d.value / totalAlloc) * 100).toFixed(1)}%
-                    </span>
-                  </div>
-                ))}
-              </div>
+          <div className="card-header">Weekly Balance Update</div>
+          <div style={{ display: 'grid', gap: 16, marginTop: 8 }}>
+            <div>
+              <label style={labelStyle}>Date</label>
+              <input type="date" value={balDate} onChange={e => setBD(e.target.value)} style={inputStyle} />
             </div>
-          ) : (
-            <div style={{ color: 'var(--text-light)', fontSize: 14, padding: 20 }}>
-              No allocation data available. Run seed script to load data.
+            <div>
+              <label style={labelStyle}>Total Balance ($)</label>
+              <input type="number" step="0.01" value={balAmt} onChange={e => setBA(e.target.value)} placeholder="61221.54" style={inputStyle} />
             </div>
-          )}
+            <div>
+              <label style={labelStyle}>Cumulative Contributions YTD ($)</label>
+              <input type="number" step="0.01" value={balC} onChange={e => setBC(e.target.value)} placeholder="3127.81" style={inputStyle} />
+            </div>
+            <button
+              disabled={loading || !balAmt}
+              onClick={() => submitForm('update_balance', { date: balDate, balance: parseFloat(balAmt), contributions_ytd: parseFloat(balC) || 0 })}
+              style={{
+                padding: 12, fontSize: 15, fontWeight: 600, color: 'white',
+                background: loading ? 'var(--blue-400)' : 'var(--navy-800)',
+                border: 'none', borderRadius: 'var(--radius)', cursor: loading ? 'wait' : 'pointer',
+              }}
+            >
+              {loading ? 'Saving…' : 'Save Balance'}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Source breakdown */}
-      {sources.length > 0 && (
+      {/* ===== TRADE DECISION ===== */}
+      {activeForm === 'trade' && (
         <div className="card">
-          <div className="card-header">YTD By Source</div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Source</th>
-                <th style={{ textAlign: 'right' }}>Deposits</th>
-                <th style={{ textAlign: 'right' }}>Fees</th>
-                <th style={{ textAlign: 'right' }}>Dividends</th>
-                <th style={{ textAlign: 'right' }}>Growth</th>
-                <th style={{ textAlign: 'right' }}>Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sources.map(s => (
-                <tr key={s.source}>
-                  <td style={{ fontWeight: 600 }}>{s.source}</td>
-                  <td style={{ textAlign: 'right' }}>{fmt(s.deposits)}</td>
-                  <td style={{ textAlign: 'right', color: 'var(--red-loss)' }}>{fmt(s.fees)}</td>
-                  <td style={{ textAlign: 'right', color: 'var(--green-gain)' }}>{fmt(s.dividends)}</td>
-                  <td style={{ textAlign: 'right' }} className={s.growth >= 0 ? 'gain' : 'loss'}>
-                    {fmt(s.growth)}
-                  </td>
-                  <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(s.balance)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="card-header">Log Trade Decision</div>
+          <div style={{ display: 'grid', gap: 16, marginTop: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12 }}>
+              <div><label style={labelStyle}>Trade #</label><input type="number" value={tradeNum} onChange={e => setTN(e.target.value)} style={inputStyle} placeholder="3" /></div>
+              <div><label style={labelStyle}>Date</label><input type="date" value={tradeDate} onChange={e => setTDate(e.target.value)} style={inputStyle} /></div>
+            </div>
+            <div><label style={labelStyle}>Description</label><input value={tradeDesc} onChange={e => setTDe(e.target.value)} style={inputStyle} placeholder="Cash → PIMIX + PRRIX (all sources)" /></div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div><label style={labelStyle}>Total Sold ($)</label><input type="number" step="0.01" value={tradeSold} onChange={e => setTS(e.target.value)} style={inputStyle} /></div>
+              <div><label style={labelStyle}>Total Bought ($)</label><input type="number" step="0.01" value={tradeBought} onChange={e => setTB(e.target.value)} style={inputStyle} /></div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div><label style={labelStyle}>Funds Sold</label><input value={tradeFundsSold} onChange={e => setTFS(e.target.value)} style={inputStyle} placeholder="NOBOX, PIMIX" /></div>
+              <div><label style={labelStyle}>Funds Bought</label><input value={tradeFundsBought} onChange={e => setTFB(e.target.value)} style={inputStyle} placeholder="General Account" /></div>
+            </div>
+            <div><label style={labelStyle}>Macro Regime</label><input value={tradeRegime} onChange={e => setTR(e.target.value)} style={inputStyle} placeholder="Risk-On Expansion" /></div>
+            <div><label style={labelStyle}>Trade Notes / Rationale</label><textarea value={tradeNotes} onChange={e => setTNo(e.target.value)} rows={3} style={{ ...inputStyle, resize: 'vertical' }} placeholder="Why did you make this trade? What was the thesis?" /></div>
+            <div><label style={labelStyle}>Status</label><select value={tradeStatus} onChange={e => setTSt(e.target.value)} style={inputStyle}><option>Open</option><option>Closed</option></select></div>
+            <button
+              disabled={loading || !tradeNum || !tradeDesc}
+              onClick={() => submitForm('update_trade', {
+                trade_num: parseInt(tradeNum), date: tradeDate, description: tradeDesc,
+                total_sold: parseFloat(tradeSold) || null, total_bought: parseFloat(tradeBought) || null,
+                funds_sold: tradeFundsSold, funds_bought: tradeFundsBought,
+                notes: tradeNotes, macro_regime: tradeRegime, status: tradeStatus,
+              })}
+              style={{
+                padding: 12, fontSize: 15, fontWeight: 600, color: 'white',
+                background: loading ? 'var(--blue-400)' : 'var(--navy-800)',
+                border: 'none', borderRadius: 'var(--radius)', cursor: loading ? 'wait' : 'pointer',
+              }}
+            >
+              {loading ? 'Saving…' : 'Save Trade'}
+            </button>
+          </div>
         </div>
       )}
     </div>
