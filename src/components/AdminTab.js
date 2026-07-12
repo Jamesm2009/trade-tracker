@@ -113,20 +113,127 @@ export default function AdminTab({ data, onRefresh }) {
     const file = fileRef.current?.files?.[0];
     if (!file) { setStatus({ type: 'error', msg: 'Select your xlsx file first' }); return; }
     setLoading(true);
-    setStatus({ type: 'info', msg: 'Uploading and processing spreadsheet… 15–30 seconds.' });
+    setStatus({ type: 'info', msg: 'Reading spreadsheet in browser…' });
+
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await fetch('/api/seed', { method: 'POST', body: formData });
+      // Load SheetJS from CDN
+      if (!window.XLSX) {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+          s.onload = resolve;
+          s.onerror = () => reject(new Error('Failed to load spreadsheet parser'));
+          document.head.appendChild(s);
+        });
+      }
+      const XLSX = window.XLSX;
+
+      setStatus({ type: 'info', msg: 'Parsing spreadsheet data…' });
+
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { cellDates: true });
+
+      function parseDate(v) {
+        if (!v) return null;
+        if (v instanceof Date) return v.toISOString().split('T')[0];
+        if (typeof v === 'number') { const d = new Date((v - 25569) * 86400000); return d.toISOString().split('T')[0]; }
+        return String(v);
+      }
+
+      // Transactions
+      const txRows = XLSX.utils.sheet_to_json(wb.Sheets['Transactions'] || {});
+      const transactions = txRows.map(r => ({
+        date: parseDate(r['Date']), confirmation: r['Confirmation #'] ? String(r['Confirmation #']) : null,
+        type: r['Type'] || null, amount: r['Amount'] != null ? parseFloat(r['Amount']) : null,
+        trade_group: r['Trade Group'] || null, detail_status: r['Detail Status'] || null, notes: r['Notes'] || null,
+      })).filter(t => t.date);
+
+      // Transfer Detail
+      const tdRows = XLSX.utils.sheet_to_json(wb.Sheets['Transfer Detail'] || {});
+      const transferDetail = tdRows.map(r => ({
+        date: parseDate(r['Date']), confirmation: r['Confirmation #'] ? String(r['Confirmation #']) : null,
+        trade_group: r['Trade Group'] || null, source: r['Source'] || null, direction: r['Direction'] || null,
+        fund: r['Fund'] || null, ticker: r['Ticker'] || null,
+        shares: r['Shares'] != null ? parseFloat(r['Shares']) : null,
+        price: r['Share Price'] != null ? parseFloat(r['Share Price']) : null,
+        amount: r['Amount'] != null ? parseFloat(r['Amount']) : null, notes: r['Notes'] || null,
+      })).filter(t => t.date);
+
+      // Dividend Detail
+      const ddRows = XLSX.utils.sheet_to_json(wb.Sheets['Dividend Detail'] || {});
+      const dividendDetail = ddRows.map(r => ({
+        date: parseDate(r['Date']), confirmation: r['Confirmation #'] ? String(r['Confirmation #']) : null,
+        fund: r['Fund'] || null, ticker: r['Ticker'] || null, source: r['Source'] || null,
+        amount: r['Amount'] != null ? parseFloat(r['Amount']) : null,
+        price: r['Share Price'] != null ? parseFloat(r['Share Price']) : null,
+        shares: r['Shares Purchased'] != null ? parseFloat(r['Shares Purchased']) : null, notes: r['Notes'] || null,
+      })).filter(d => d.date);
+
+      // YTD Summary
+      const ytdData = XLSX.utils.sheet_to_json(wb.Sheets['YTD Summary'] || {}, { header: 1 });
+      let beginBal=56248.10,endBal=61221.54,deps=3127.81,fees=-120.37,divs=898.73,chg=1067.27;
+      ytdData.forEach(row => {
+        if(row[0]==='Beginning Balance'&&row[1]!=null) beginBal=parseFloat(row[1]);
+        if(row[0]==='Total Deposits'&&row[1]!=null) deps=parseFloat(row[1]);
+        if(row[0]==='Total Withdrawals/Expenses'&&row[1]!=null) fees=parseFloat(row[1]);
+        if(row[0]==='Total Dividends'&&row[1]!=null) divs=parseFloat(row[1]);
+        if(row[0]==='Total Change in Value'&&row[1]!=null) chg=parseFloat(row[1]);
+        if(row[0]==='Ending Balance'&&row[1]!=null) endBal=parseFloat(row[1]);
+      });
+      const sources = [];
+      ['Employee 403(b)','Employer Match','Roth'].forEach(sn => {
+        ytdData.forEach(row => {
+          if(row[0]===sn) sources.push({source:row[0],beginning:parseFloat(row[1])||0,deposits:parseFloat(row[2])||0,fees:parseFloat(row[3])||0,dividends:parseFloat(row[4])||0,growth:parseFloat(row[5])||0,balance:parseFloat(row[6])||0});
+        });
+      });
+      const fundYtd = [];
+      let inFS = false;
+      ytdData.forEach(row => {
+        if(row[0]==='Fund'&&row[1]==='Ticker'){inFS=true;return;}
+        if(inFS&&row[0]==='Total'){inFS=false;return;}
+        if(inFS&&row[0]&&row[0]!=='Total') fundYtd.push({fund:row[0],ticker:row[1]||'—',beginning_balance:parseFloat(row[2])||0,deposits:parseFloat(row[3])||0,transfers:parseFloat(row[4])||0,fees:parseFloat(row[5])||0,dividends:parseFloat(row[6])||0,change:parseFloat(row[7])||0,ending_balance:parseFloat(row[8])||0,shares:parseFloat(row[9])||0});
+      });
+      const ytdSummary = {beginning_balance:beginBal,ending_balance:endBal,total_deposits:deps,total_fees:fees,total_dividends:divs,total_change:chg,sources,funds:fundYtd};
+
+      // Fund Universe
+      const fuRows = XLSX.utils.sheet_to_json(wb.Sheets['Fund Universe'] || {});
+      const fundUniverse = fuRows.filter(r=>r['Fund Name']).map(r=>({num:r['#'],name:r['Fund Name'],ticker:r['Ticker']||'—',category:r['Category']||null,in_use:r['In Use (YTD)']||null,opening_balance:r['Opening Balance']!=null?parseFloat(r['Opening Balance']):null}));
+
+      // Weekly Balance
+      const wbRows = XLSX.utils.sheet_to_json(wb.Sheets['Weekly Balance'] || {});
+      const weeklyBalance = wbRows.filter(r=>r['Week Ending']).map(r=>({date:parseDate(r['Week Ending']),balance:r['Empower Balance']!=null?parseFloat(r['Empower Balance']):null,notes:r['Notes']||null})).filter(w=>w.balance!=null);
+
+      // Fund Prices
+      const fpData = XLSX.utils.sheet_to_json(wb.Sheets['Fund Prices'] || {}, { header: 1 });
+      const tickers = fpData[1] || [];
+      const fundPrices = [];
+      for(let i=3;i<fpData.length;i++){const row=fpData[i];if(!row||!row[0])continue;const entry={date:parseDate(row[0]),prices:{}};for(let j=1;j<tickers.length;j++){if(tickers[j]&&row[j]!=null)entry.prices[tickers[j]]=parseFloat(row[j]);}if(Object.keys(entry.prices).length>0)fundPrices.push(entry);}
+
+      const account = {balance:endBal,as_of_date:'7/9/2026',opening_balance:beginBal,contributions_ytd:deps};
+
+      setStatus({ type: 'info', msg: 'Writing to Redis…' });
+
+      const res = await fetch('/api/seed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account, transactions, transferDetail, dividendDetail,
+          ytdSummary, fundUniverse, weeklyBalance, fundPrices,
+          counts: { transactions: transactions.length, transferDetail: transferDetail.length, dividendDetail: dividendDetail.length, ytdFunds: fundYtd.length, fundUniverse: fundUniverse.length, weeklyBalance: weeklyBalance.length, fundPrices: fundPrices.length },
+        }),
+      });
+
       const json = await res.json();
       if (res.ok) {
-        const r = json.counts || {};
-        setStatus({ type: 'success', msg: `Seed complete! Loaded data into Redis.` });
+        const c = json.counts || {};
+        setStatus({ type: 'success', msg: `Seed complete! ${c.transactions || 0} transactions, ${c.transferDetail || 0} transfer details, ${c.dividendDetail || 0} dividends, ${c.trades || 0} trades, ${c.ytdFunds || 0} fund summaries.` });
         if (onRefresh) onRefresh();
       } else {
         setStatus({ type: 'error', msg: json.error || 'Seed failed' });
       }
-    } catch (e) { setStatus({ type: 'error', msg: e.message }); }
+    } catch (e) {
+      setStatus({ type: 'error', msg: e.message });
+    }
     setLoading(false);
   }
 
