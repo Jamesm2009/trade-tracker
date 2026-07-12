@@ -1,15 +1,11 @@
 'use client';
 
 import { useState } from 'react';
+import { fmtDate } from '@/lib/format';
 
 function fmt(n) {
   if (n == null) return '—';
   return '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function fmtDate(d) {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 export default function TradesTab({ data }) {
