@@ -24,15 +24,23 @@ const CATEGORY_TO_CLASS = {
   'Cash': 'Cash',
   'Commodity': 'Commodities',
   'Intl Value': 'Intl-Equities',
+  'Intl Growth': 'Intl-Equities',
+  'Intl Blend': 'Intl-Equities',
   'Core Bond': 'Bonds',
   'High Yield': 'Bonds',
   'Large Growth': 'US-Equities',
+  'Large Value': 'US-Equities',
+  'Large Blend': 'US-Equities',
+  'Mid Cap': 'US-Equities',
+  'Small Cap': 'US-Equities',
   'Bond Index': 'Bonds',
   'Multi-Sector Bond': 'Bonds',
   'TIPS/Inflation': 'Bonds',
   'Global Bond': 'Bonds',
   'S&P 500': 'US-Equities',
   'Target Date 2060': 'Blended',
+  'REIT': 'Real Estate',
+  'Real Estate': 'Real Estate',
 };
 
 function fmt(n, decimals = 0) {
