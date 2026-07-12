@@ -81,10 +81,24 @@ export async function POST(request) {
           await redis.set(key('ytd_summary'), ytd);
         }
 
-        // Append to weekly balance history
+        // Upsert into weekly balance history (replace same-date entry instead of duplicating)
         const wbl = (await safeGet(key('weekly_balance'))) || [];
-        wbl.push({ date: payload.date, balance: payload.balance });
+        const wIdx = wbl.findIndex(w => w.date === payload.date);
+        const newEntry = { date: payload.date, balance: payload.balance };
+        if (wIdx >= 0) wbl[wIdx] = newEntry; else wbl.push(newEntry);
         await redis.set(key('weekly_balance'), wbl);
+
+        // Optional: capture a benchmark fund price snapshot (e.g. TRRJX) for the performance chart
+        if (payload.benchmark_ticker && payload.benchmark_price) {
+          const fp = (await safeGet(key('fund_prices'))) || [];
+          const fIdx = fp.findIndex(f => f.date === payload.date);
+          if (fIdx >= 0) {
+            fp[fIdx].prices = { ...fp[fIdx].prices, [payload.benchmark_ticker]: payload.benchmark_price };
+          } else {
+            fp.push({ date: payload.date, prices: { [payload.benchmark_ticker]: payload.benchmark_price } });
+          }
+          await redis.set(key('fund_prices'), fp);
+        }
 
         return NextResponse.json({ success: true });
       }
