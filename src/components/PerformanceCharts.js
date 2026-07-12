@@ -9,7 +9,7 @@ function fmt(n) {
   return '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
-const BENCHMARK_TICKER = 'TRRJX'; // T Rowe Price Retirement 2060 Fund
+const BENCHMARK_TICKER = 'TRRLX'; // T Rowe Price Retirement 2060 Fund
 
 export default function PerformanceCharts({ data }) {
   const [view, setView] = useState('contributions'); // 'contributions' | 'benchmark'
@@ -53,7 +53,7 @@ export default function PerformanceCharts({ data }) {
     });
   }, [transactions, weeklyBalance]);
 
-  // ===== Chart 2: Portfolio % return vs Benchmark (TRRJX) % return =====
+  // ===== Chart 2: Portfolio % return vs Benchmark (TRRLX) % return =====
   const benchmarkChartData = useMemo(() => {
     const balances = (weeklyBalance || [])
       .filter(w => w.date && w.balance != null)
@@ -181,11 +181,11 @@ export default function PerformanceCharts({ data }) {
                 <YAxis tick={{ fontSize: 11 }} tickFormatter={v => v + '%'} />
                 <Tooltip
                   labelFormatter={d => fmtDate(d)}
-                  formatter={(val, name) => [val + '%', name === 'portfolio' ? 'Your Portfolio' : 'Target Date 2060 (TRRJX)']}
+                  formatter={(val, name) => [val + '%', name === 'portfolio' ? 'Your Portfolio' : 'Target Date 2060 (TRRLX)']}
                   contentStyle={{ fontSize: 13, borderRadius: 8 }}
                 />
                 <Legend
-                  formatter={v => v === 'portfolio' ? 'Your Portfolio' : 'Target Date 2060 (TRRJX)'}
+                  formatter={v => v === 'portfolio' ? 'Your Portfolio' : 'Target Date 2060 (TRRLX)'}
                   wrapperStyle={{ fontSize: 12 }}
                 />
                 <Line type="monotone" dataKey="portfolio" stroke="var(--navy-800)" strokeWidth={2} connectNulls dot={{ r: 3 }} />
@@ -195,7 +195,7 @@ export default function PerformanceCharts({ data }) {
           </div>
         ) : (
           <div style={{ color: 'var(--text-light)', fontSize: 14, padding: 30, textAlign: 'center' }}>
-            No Target Date 2060 (TRRJX) price history yet. This builds automatically as weekly
+            No Target Date 2060 (TRRLX) price history yet. This builds automatically as weekly
             balances are logged and fund prices are captured over time.
           </div>
         )
