@@ -3,28 +3,23 @@ import redis, { key } from '@/lib/redis';
 
 export const dynamic = 'force-dynamic';
 
+async function safeGet(k) {
+  let val = await redis.get(k);
+  if (typeof val === 'string') {
+    try { val = JSON.parse(val); } catch (e) { /* primitive */ }
+  }
+  return val;
+}
+
 export async function GET() {
   try {
     const [
-      account,
-      transactions,
-      trades,
-      transferDetail,
-      dividendDetail,
-      fundUniverse,
-      weeklyBalance,
-      ytdSummary,
-      fundPrices,
+      account, transactions, trades, transferDetail,
+      dividendDetail, fundUniverse, weeklyBalance, ytdSummary, fundPrices,
     ] = await Promise.all([
-      redis.get(key('account')),
-      redis.get(key('transactions')),
-      redis.get(key('trades')),
-      redis.get(key('transfer_detail')),
-      redis.get(key('dividend_detail')),
-      redis.get(key('fund_universe')),
-      redis.get(key('weekly_balance')),
-      redis.get(key('ytd_summary')),
-      redis.get(key('fund_prices')),
+      safeGet(key('account')), safeGet(key('transactions')), safeGet(key('trades')),
+      safeGet(key('transfer_detail')), safeGet(key('dividend_detail')), safeGet(key('fund_universe')),
+      safeGet(key('weekly_balance')), safeGet(key('ytd_summary')), safeGet(key('fund_prices')),
     ]);
 
     return NextResponse.json({
