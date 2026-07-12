@@ -63,7 +63,7 @@ export default function AdminTab({ data, onRefresh }) {
             date: balDate,
             balance: totalBalance,
             funds: updatedFunds,
-            benchmark_ticker: 'TRRJX',
+            benchmark_ticker: 'TRRLX',
             benchmark_price: parseFloat(benchPrice) || null,
           },
         }),
@@ -374,7 +374,7 @@ export default function AdminTab({ data, onRefresh }) {
             </div>
 
             <div>
-              <label style={ls}>Target Date 2060 (TRRJX) Price (optional)</label>
+              <label style={ls}>Target Date 2060 (TRRLX) Price (optional)</label>
               <input type="number" step="0.01" value={benchPrice} onChange={e => setBenchPrice(e.target.value)}
                 placeholder="e.g. 19.85" style={is} />
               <div style={{ fontSize: 11, color: 'var(--text-light)', marginTop: 4 }}>
