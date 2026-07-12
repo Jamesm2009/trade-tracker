@@ -17,6 +17,7 @@ export default function AdminTab({ data, onRefresh }) {
   const [balDate, setBD] = useState(new Date().toISOString().split('T')[0]);
   const [balAmt, setBA] = useState('');
   const [fundBalances, setFundBalances] = useState({});
+  const [benchPrice, setBenchPrice] = useState('');
 
   // Trade form state
   const [tradeNum, setTN] = useState('');
@@ -62,6 +63,8 @@ export default function AdminTab({ data, onRefresh }) {
             date: balDate,
             balance: totalBalance,
             funds: updatedFunds,
+            benchmark_ticker: 'TRRJX',
+            benchmark_price: parseFloat(benchPrice) || null,
           },
         }),
       });
@@ -367,6 +370,16 @@ export default function AdminTab({ data, onRefresh }) {
                 style={is} />
               <div style={{ fontSize: 11, color: 'var(--text-light)', marginTop: 4 }}>
                 Leave blank to use the sum of fund balances above
+              </div>
+            </div>
+
+            <div>
+              <label style={ls}>Target Date 2060 (TRRJX) Price (optional)</label>
+              <input type="number" step="0.01" value={benchPrice} onChange={e => setBenchPrice(e.target.value)}
+                placeholder="e.g. 19.85" style={is} />
+              <div style={{ fontSize: 11, color: 'var(--text-light)', marginTop: 4 }}>
+                Empower shows this as the share price/NAV for T Rowe Price Retirement 2060.
+                Entering it here builds the "Portfolio vs Target Date 2060" chart on the Portfolio tab over time.
               </div>
             </div>
 
