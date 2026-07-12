@@ -36,12 +36,48 @@ const TRADE_DECISIONS = [
   {trade_num:13,date:"2026-04-25",description:"PRRIX, Cash \u2192 COSYX, MCZZX, NOBOX, PIMIX, PRRIX",funds_sold:"PRRIX, Cash",funds_bought:"COSYX, MCZZX, NOBOX, PIMIX, PRRIX",total_sold:12305.66,total_bought:12305.66,status:"Open",notes:"Rebalancer #663606218. Redeploy cash back into diversified bonds + intl.",macro_regime:null},
 ];
 
+async function safeGet(k) {
+  let val = await redis.get(k);
+  if (typeof val === 'string') {
+    try { val = JSON.parse(val); } catch (e) { /* not JSON */ }
+  }
+  return val;
+}
+
+// Merge two weekly-balance arrays by date. On a date collision, the manually
+// entered value wins over the spreadsheet value, since it's more current.
+function mergeWeeklyBalance(spreadsheetRows, manualRows) {
+  const map = new Map();
+  (spreadsheetRows || []).forEach(r => { if (r && r.date) map.set(r.date, r); });
+  (manualRows || []).forEach(r => { if (r && r.date) map.set(r.date, r); }); // overwrites on conflict
+  return Array.from(map.values()).sort((a, b) => new Date(a.date) - new Date(b.date));
+}
+
+// Merge fund price snapshots by date, merging the inner ticker→price map too.
+function mergeFundPrices(spreadsheetRows, manualRows) {
+  const map = new Map();
+  (spreadsheetRows || []).forEach(r => { if (r && r.date) map.set(r.date, { date: r.date, prices: { ...r.prices } }); });
+  (manualRows || []).forEach(r => {
+    if (!r || !r.date) return;
+    const existing = map.get(r.date) || { date: r.date, prices: {} };
+    map.set(r.date, { date: r.date, prices: { ...existing.prices, ...r.prices } });
+  });
+  return Array.from(map.values()).sort((a, b) => new Date(a.date) - new Date(b.date));
+}
+
 export async function POST(request) {
   try {
     const data = await request.json();
 
     const dividendDetail = fixTickers(data.dividendDetail);
     const transferDetail = fixTickers(data.transferDetail);
+
+    // Preserve anything added manually via Admin (weekly balance updates,
+    // benchmark price captures) instead of wiping it out on re-seed.
+    const existingWeekly = await safeGet(PREFIX + 'weekly_balance');
+    const existingPrices = await safeGet(PREFIX + 'fund_prices');
+    const mergedWeekly = mergeWeeklyBalance(data.weeklyBalance, existingWeekly);
+    const mergedPrices = mergeFundPrices(data.fundPrices, existingPrices);
 
     await Promise.all([
       redis.set(PREFIX + 'account', data.account),
@@ -51,11 +87,11 @@ export async function POST(request) {
       redis.set(PREFIX + 'dividend_detail', dividendDetail),
       redis.set(PREFIX + 'ytd_summary', data.ytdSummary),
       redis.set(PREFIX + 'fund_universe', data.fundUniverse),
-      redis.set(PREFIX + 'weekly_balance', data.weeklyBalance),
-      redis.set(PREFIX + 'fund_prices', data.fundPrices),
+      redis.set(PREFIX + 'weekly_balance', mergedWeekly),
+      redis.set(PREFIX + 'fund_prices', mergedPrices),
     ]);
 
-    return NextResponse.json({ success: true, counts: { ...data.counts, trades: TRADE_DECISIONS.length } });
+    return NextResponse.json({ success: true, counts: { ...data.counts, trades: TRADE_DECISIONS.length, weeklyBalance: mergedWeekly.length } });
   } catch (error) {
     console.error('Seed error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
