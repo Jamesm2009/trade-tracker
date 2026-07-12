@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { fmtDate } from '@/lib/format';
 
 function fmt(n) {
   if (n == null) return '—';
@@ -131,7 +132,7 @@ export default function ActivityTab({ data }) {
                 <tbody key={i}>
                   <tr>
                     <td style={{ whiteSpace: 'nowrap', fontSize: 13 }}>
-                      {tx.date ? new Date(tx.date).toLocaleDateString() : '—'}
+                      {fmtDate(tx.date)}
                     </td>
                     <td style={{ fontSize: 13, fontVariantNumeric: 'tabular-nums', color: 'var(--text-mid)' }}>
                       {tx.confirmation}
