@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { fmtDate } from '@/lib/format';
 
 function fmt(n) {
   if (n == null) return '—';
@@ -193,7 +194,7 @@ export default function FundsTab({ data }) {
                 <tbody>
                   {fundDividends.map((dd, i) => (
                     <tr key={i}>
-                      <td style={{ fontSize: 13 }}>{dd.date ? new Date(dd.date).toLocaleDateString() : '—'}</td>
+                      <td style={{ fontSize: 13 }}>{fmtDate(dd.date)}</td>
                       <td style={{ fontSize: 13 }}>{dd.source}</td>
                       <td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13, color: 'var(--green-gain)' }}>
                         {fmt(dd.amount)}
