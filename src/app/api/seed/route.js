@@ -7,6 +7,8 @@ const redis = new Redis({
 });
 
 const PREFIX = 'tt_';
+const EXAMPLE_TICKER = 'XXXX';
+const EXAMPLE_CONFIRMATION_PREFIX = 'EXAMPLE';
 
 const TICKER_FIXES = { 'MQLAX': 'MCZZX', 'TRRJX': 'TRRLX' };
 function fixTicker(t) { return TICKER_FIXES[t] || t; }
@@ -17,6 +19,19 @@ function fixTickers(arr) {
     if (fixed.ticker) fixed.ticker = fixTicker(fixed.ticker);
     return fixed;
   });
+}
+
+// Any row carrying the example marker (ticker XXXX or a confirmation number
+// starting with EXAMPLE) is a leftover template row and is always dropped,
+// whether or not the person remembered to delete it before uploading.
+function isExampleRow(r) {
+  if (!r) return true;
+  if (r.ticker === EXAMPLE_TICKER) return true;
+  if (r.confirmation && String(r.confirmation).toUpperCase().startsWith(EXAMPLE_CONFIRMATION_PREFIX)) return true;
+  return false;
+}
+function stripExamples(arr) {
+  return (arr || []).filter(r => !isExampleRow(r));
 }
 
 // 13 verified rebalance decisions for 2026
@@ -65,37 +80,109 @@ function mergeFundPrices(spreadsheetRows, manualRows) {
   return Array.from(map.values()).sort((a, b) => new Date(a.date) - new Date(b.date));
 }
 
+// Append-and-dedupe a transaction-style log. `keyFn` derives a unique key per
+// row (e.g. confirmation number); on a key collision the uploaded row wins
+// (lets you re-upload a corrected row), but rows already in Redis that the
+// upload doesn't mention are always preserved — an upload is treated as
+// "new/updated rows to add", never as "this is now the complete list".
+function mergeLog(existingRows, newRows, keyFn) {
+  const map = new Map();
+  (existingRows || []).forEach(r => { const k = keyFn(r); if (k) map.set(k, r); });
+  (newRows || []).forEach(r => { const k = keyFn(r); if (k) map.set(k, r); });
+  return Array.from(map.values()).sort((a, b) => new Date(a.date) - new Date(b.date));
+}
+
+// Ticker-keyed merge: rows in the upload update/insert by ticker; any ticker
+// already in Redis but absent from this upload is left untouched.
+function mergeByTicker(existingRows, newRows) {
+  const map = new Map();
+  (existingRows || []).forEach(r => { if (r && r.ticker) map.set(r.ticker, r); });
+  (newRows || []).forEach(r => { if (r && r.ticker) map.set(r.ticker, r); });
+  return Array.from(map.values());
+}
+
+// YTD Summary account-level totals: only overwrite a field if the upload
+// actually supplied a value for it (non-null); a blank cell in the sheet
+// means "no change", not "reset to zero/whatever the template shipped with".
+function mergeYtdSummary(existing, incoming) {
+  const merged = { ...(existing || {}) };
+  ['beginning_balance', 'ending_balance', 'total_deposits', 'total_fees', 'total_dividends', 'total_change'].forEach(k => {
+    if (incoming && incoming[k] != null) merged[k] = incoming[k];
+  });
+  if (incoming && Array.isArray(incoming.sources) && incoming.sources.length > 0) {
+    merged.sources = incoming.sources;
+  } else if (!merged.sources) {
+    merged.sources = [];
+  }
+  merged.funds = mergeByTicker(existing?.funds, stripExamples(incoming?.funds));
+  return merged;
+}
+
+// Account summary: same "blank means no change" rule as YTD Summary.
+function mergeAccount(existing, incoming) {
+  const merged = { ...(existing || {}) };
+  if (incoming) {
+    if (incoming.balance != null) merged.balance = incoming.balance;
+    if (incoming.as_of_date != null) merged.as_of_date = incoming.as_of_date;
+    if (incoming.opening_balance != null) merged.opening_balance = incoming.opening_balance;
+    if (incoming.contributions_ytd != null) merged.contributions_ytd = incoming.contributions_ytd;
+  }
+  return merged;
+}
+
 export async function POST(request) {
   try {
     const data = await request.json();
 
-    const dividendDetail = fixTickers(data.dividendDetail);
-    const transferDetail = fixTickers(data.transferDetail);
-    const fundUniverse = fixTickers(data.fundUniverse);
-    const ytdSummary = data.ytdSummary
-      ? { ...data.ytdSummary, funds: fixTickers(data.ytdSummary.funds) }
-      : data.ytdSummary;
+    const dividendDetail = stripExamples(fixTickers(data.dividendDetail));
+    const transferDetail = stripExamples(fixTickers(data.transferDetail));
+    const fundUniverse = stripExamples(fixTickers(data.fundUniverse));
+    const transactions = stripExamples(data.transactions);
 
-    // Preserve anything added manually via Admin (weekly balance updates,
-    // benchmark price captures) instead of wiping it out on re-seed.
     const existingWeekly = await safeGet(PREFIX + 'weekly_balance');
     const existingPrices = await safeGet(PREFIX + 'fund_prices');
+    const existingTransactions = await safeGet(PREFIX + 'transactions');
+    const existingTransferDetail = await safeGet(PREFIX + 'transfer_detail');
+    const existingDividendDetail = await safeGet(PREFIX + 'dividend_detail');
+    const existingFundUniverse = await safeGet(PREFIX + 'fund_universe');
+    const existingYtdSummary = await safeGet(PREFIX + 'ytd_summary');
+
     const mergedWeekly = mergeWeeklyBalance(data.weeklyBalance, existingWeekly);
     const mergedPrices = mergeFundPrices(data.fundPrices, existingPrices);
+    const mergedTransactions = mergeLog(existingTransactions, transactions, r => r.confirmation || `${r.date}|${r.type}|${r.amount}`);
+    const mergedTransferDetail = mergeLog(existingTransferDetail, transferDetail, r => `${r.confirmation}|${r.source}|${r.ticker || r.fund}|${r.direction}`);
+    const mergedDividendDetail = mergeLog(existingDividendDetail, dividendDetail, r => `${r.confirmation}|${r.source}|${r.ticker || r.fund}`);
+    const mergedFundUniverse = mergeByTicker(existingFundUniverse, fundUniverse);
+    const mergedYtdSummary = mergeYtdSummary(existingYtdSummary, data.ytdSummary);
+
+    const existingAccount = await safeGet(PREFIX + 'account');
+    const mergedAccount = mergeAccount(existingAccount, data.account);
 
     await Promise.all([
-      redis.set(PREFIX + 'account', data.account),
-      redis.set(PREFIX + 'transactions', data.transactions),
-      redis.set(PREFIX + 'transfer_detail', transferDetail),
+      redis.set(PREFIX + 'account', mergedAccount),
+      redis.set(PREFIX + 'transactions', mergedTransactions),
+      redis.set(PREFIX + 'transfer_detail', mergedTransferDetail),
       redis.set(PREFIX + 'trades', TRADE_DECISIONS),
-      redis.set(PREFIX + 'dividend_detail', dividendDetail),
-      redis.set(PREFIX + 'ytd_summary', ytdSummary),
-      redis.set(PREFIX + 'fund_universe', fundUniverse),
+      redis.set(PREFIX + 'dividend_detail', mergedDividendDetail),
+      redis.set(PREFIX + 'ytd_summary', mergedYtdSummary),
+      redis.set(PREFIX + 'fund_universe', mergedFundUniverse),
       redis.set(PREFIX + 'weekly_balance', mergedWeekly),
       redis.set(PREFIX + 'fund_prices', mergedPrices),
     ]);
 
-    return NextResponse.json({ success: true, counts: { ...data.counts, trades: TRADE_DECISIONS.length, weeklyBalance: mergedWeekly.length } });
+    return NextResponse.json({
+      success: true,
+      counts: {
+        transactions: mergedTransactions.length,
+        transferDetail: mergedTransferDetail.length,
+        dividendDetail: mergedDividendDetail.length,
+        trades: TRADE_DECISIONS.length,
+        ytdFunds: mergedYtdSummary.funds.length,
+        fundUniverse: mergedFundUniverse.length,
+        weeklyBalance: mergedWeekly.length,
+        fundPrices: mergedPrices.length,
+      },
+    });
   } catch (error) {
     console.error('Seed error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
