@@ -174,7 +174,9 @@ export default function AdminTab({ data, onRefresh }) {
 
       // YTD Summary
       const ytdData = XLSX.utils.sheet_to_json(wb.Sheets['YTD Summary'] || {}, { header: 1 });
-      let beginBal=56248.10,endBal=61221.54,deps=3127.81,fees=-120.37,divs=898.73,chg=1067.27;
+      // null = "not present in this upload" so the server preserves the existing
+      // value instead of resetting it. Never hardcode a fallback number here.
+      let beginBal=null,endBal=null,deps=null,fees=null,divs=null,chg=null;
       ytdData.forEach(row => {
         if(row[0]==='Beginning Balance'&&row[1]!=null) beginBal=parseFloat(row[1]);
         if(row[0]==='Total Deposits'&&row[1]!=null) deps=parseFloat(row[1]);
@@ -212,7 +214,7 @@ export default function AdminTab({ data, onRefresh }) {
       const fundPrices = [];
       for(let i=3;i<fpData.length;i++){const row=fpData[i];if(!row||!row[0])continue;const entry={date:parseDate(row[0]),prices:{}};for(let j=1;j<tickers.length;j++){if(tickers[j]&&row[j]!=null)entry.prices[tickers[j]]=parseFloat(row[j]);}if(Object.keys(entry.prices).length>0)fundPrices.push(entry);}
 
-      const account = {balance:endBal,as_of_date:'7/9/2026',opening_balance:beginBal,contributions_ytd:deps};
+      const account = {balance:endBal,as_of_date:null,opening_balance:beginBal,contributions_ytd:deps};
 
       setStatus({ type: 'info', msg: 'Writing to Redis…' });
 
