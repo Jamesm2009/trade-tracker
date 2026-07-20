@@ -34,8 +34,10 @@ function stripExamples(arr) {
   return (arr || []).filter(r => !isExampleRow(r));
 }
 
-// 13 verified rebalance decisions for 2026
-const TRADE_DECISIONS = [
+// Baseline: only used the very first time this account is seeded (Redis has
+// no trades yet). After that, trades are managed via the Trade Decisions
+// sheet (merged by Trade #) or the Admin → Trade Decision form.
+const TRADE_DECISIONS_BASELINE = [
   {trade_num:1,date:"2026-01-16",description:"COSYX, GCCUX, Cash \u2192 FBNRX, NOBOX, PIMIX, PRRIX",funds_sold:"COSYX, GCCUX, Cash",funds_bought:"FBNRX, NOBOX, PIMIX, PRRIX",total_sold:14322.85,total_bought:14322.85,status:"Closed",notes:null,macro_regime:null},
   {trade_num:2,date:"2026-01-23",description:"Rebalance to PIMIX 30%, PRRIX 20%, NOBOX 20%, FBNRX 10%, TRRLX 5%, Cash 15%",funds_sold:"PIMIX, PRRIX, TRRLX, FBNRX",funds_bought:"Cash, NOBOX",total_sold:8567.73,total_bought:8567.73,status:"Closed",notes:"Rebalancer #620520637. Executed 1/23.",macro_regime:null},
   {trade_num:3,date:"2026-01-23",description:"Rebalance to PIMIX 20%, PRRIX 15%, NOBOX 15%, Cash 40%, FBNRX 5%, TRRLX 5%",funds_sold:"FBNRX, NOBOX, PIMIX, PRRIX, TRRLX",funds_bought:"Cash",total_sold:26703.45,total_bought:26703.45,status:"Closed",notes:"Rebalancer #620734247. Setup 1/23, executed 1/26.",macro_regime:null},
@@ -50,6 +52,27 @@ const TRADE_DECISIONS = [
   {trade_num:12,date:"2026-04-10",description:"COSYX, FBNRX \u2192 MCZZX, PIMIX, PRRIX, Cash",funds_sold:"COSYX, FBNRX",funds_bought:"MCZZX, PIMIX, PRRIX, Cash",total_sold:3427.57,total_bought:3427.57,status:"Closed",notes:"Partial redeploy from intl/global to core bonds.",macro_regime:null},
   {trade_num:13,date:"2026-04-25",description:"PRRIX, Cash \u2192 COSYX, MCZZX, NOBOX, PIMIX, PRRIX",funds_sold:"PRRIX, Cash",funds_bought:"COSYX, MCZZX, NOBOX, PIMIX, PRRIX",total_sold:12305.66,total_bought:12305.66,status:"Open",notes:"Rebalancer #663606218. Redeploy cash back into diversified bonds + intl.",macro_regime:null},
 ];
+
+// A trade row is a leftover example if it has no trade number, or its
+// description/notes carry the EXAMPLE marker from the template.
+function isExampleTrade(r) {
+  if (!r || r.trade_num == null || r.trade_num === '') return true;
+  if (r.description && String(r.description).toUpperCase().includes('EXAMPLE')) return true;
+  return false;
+}
+function stripExampleTrades(arr) {
+  return (arr || []).filter(r => !isExampleTrade(r));
+}
+
+// Trade-number-keyed merge: an uploaded row with the same Trade # as an
+// existing one corrects it; new Trade #s are added; existing trades not
+// mentioned in the upload are preserved untouched.
+function mergeTrades(existingRows, newRows) {
+  const map = new Map();
+  (existingRows || []).forEach(r => { if (r && r.trade_num != null) map.set(r.trade_num, r); });
+  (newRows || []).forEach(r => { if (r && r.trade_num != null) map.set(r.trade_num, r); });
+  return Array.from(map.values()).sort((a, b) => a.trade_num - b.trade_num);
+}
 
 async function safeGet(k) {
   let val = await redis.get(k);
@@ -158,11 +181,15 @@ export async function POST(request) {
     const existingAccount = await safeGet(PREFIX + 'account');
     const mergedAccount = mergeAccount(existingAccount, data.account);
 
+    const existingTrades = await safeGet(PREFIX + 'trades');
+    const tradeBaseline = (existingTrades && existingTrades.length > 0) ? existingTrades : TRADE_DECISIONS_BASELINE;
+    const mergedTrades = mergeTrades(tradeBaseline, stripExampleTrades(data.trades));
+
     await Promise.all([
       redis.set(PREFIX + 'account', mergedAccount),
       redis.set(PREFIX + 'transactions', mergedTransactions),
       redis.set(PREFIX + 'transfer_detail', mergedTransferDetail),
-      redis.set(PREFIX + 'trades', TRADE_DECISIONS),
+      redis.set(PREFIX + 'trades', mergedTrades),
       redis.set(PREFIX + 'dividend_detail', mergedDividendDetail),
       redis.set(PREFIX + 'ytd_summary', mergedYtdSummary),
       redis.set(PREFIX + 'fund_universe', mergedFundUniverse),
@@ -176,7 +203,7 @@ export async function POST(request) {
         transactions: mergedTransactions.length,
         transferDetail: mergedTransferDetail.length,
         dividendDetail: mergedDividendDetail.length,
-        trades: TRADE_DECISIONS.length,
+        trades: mergedTrades.length,
         ytdFunds: mergedYtdSummary.funds.length,
         fundUniverse: mergedFundUniverse.length,
         weeklyBalance: mergedWeekly.length,
