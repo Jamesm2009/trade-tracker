@@ -325,7 +325,6 @@ export default function PortfolioTab({ data }) {
         </div>
       )}
 
-
       {/* Performance charts */}
       <PerformanceCharts data={data} />
     </div>
