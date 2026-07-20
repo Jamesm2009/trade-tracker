@@ -29,7 +29,12 @@ export default function AdminTab({ data, onRefresh }) {
   const [tradeFundsBought, setTFB] = useState('');
   const [tradeNotes, setTNo] = useState('');
   const [tradeRegime, setTR] = useState('');
+  const [tradeConfirmation, setTConf] = useState('');
   const [tradeStatus, setTSt] = useState('Open');
+
+  // Delete form state
+  const [deleteConf, setDeleteConf] = useState('');
+  const [deleteConfirmStep, setDeleteConfirmStep] = useState(false);
 
   function setFundBal(ticker, val) {
     setFundBalances(prev => ({ ...prev, [ticker]: val }));
@@ -96,6 +101,7 @@ export default function AdminTab({ data, onRefresh }) {
             total_sold: parseFloat(tradeSold) || null, total_bought: parseFloat(tradeBought) || null,
             funds_sold: tradeFundsSold, funds_bought: tradeFundsBought,
             notes: tradeNotes, macro_regime: tradeRegime, status: tradeStatus,
+            confirmation: tradeConfirmation.trim() || null,
           },
         }),
       });
@@ -109,6 +115,41 @@ export default function AdminTab({ data, onRefresh }) {
     } catch (e) {
       setStatus({ type: 'error', msg: e.message });
     }
+    setLoading(false);
+  }
+
+  async function submitDelete() {
+    if (!deleteConfirmStep) {
+      setDeleteConfirmStep(true);
+      return;
+    }
+    setLoading(true);
+    setStatus(null);
+    try {
+      const res = await fetch('/api/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete_by_confirmation', payload: { confirmation: deleteConf.trim() } }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        const r = json.removed || {};
+        const total = (r.transactions || 0) + (r.transferDetail || 0) + (r.dividendDetail || 0);
+        setStatus({
+          type: total > 0 ? 'success' : 'info',
+          msg: total > 0
+            ? `Removed ${r.transactions} transaction row, ${r.transferDetail} transfer detail row(s), ${r.dividendDetail} dividend detail row(s) for confirmation ${deleteConf}.`
+            : `No rows found with confirmation "${deleteConf}" — nothing removed.`,
+        });
+        setDeleteConf('');
+        if (onRefresh) onRefresh();
+      } else {
+        setStatus({ type: 'error', msg: json.error || 'Failed' });
+      }
+    } catch (e) {
+      setStatus({ type: 'error', msg: e.message });
+    }
+    setDeleteConfirmStep(false);
     setLoading(false);
   }
 
@@ -215,6 +256,7 @@ export default function AdminTab({ data, onRefresh }) {
         status: r['Status'] || null,
         notes: r['Notes'] || null,
         macro_regime: r['Macro Regime'] || null,
+        confirmation: r['Confirmation #'] ? String(r['Confirmation #']) : null,
       }));
 
       // Fund Universe
@@ -273,6 +315,7 @@ export default function AdminTab({ data, onRefresh }) {
     { id: 'balance', label: 'Weekly Balance' },
     { id: 'trade', label: 'Trade Decision' },
     { id: 'seed', label: 'Seed Data' },
+    { id: 'delete', label: 'Delete Entry' },
   ];
 
   return (
@@ -436,6 +479,15 @@ export default function AdminTab({ data, onRefresh }) {
               <div><label style={ls}>Funds Bought</label><input value={tradeFundsBought} onChange={e => setTFB(e.target.value)} style={is} placeholder="General Account" /></div>
             </div>
             <div><label style={ls}>Macro Regime</label><input value={tradeRegime} onChange={e => setTR(e.target.value)} style={is} placeholder="Risk-On Expansion" /></div>
+            <div>
+              <label style={ls}>Confirmation # (optional)</label>
+              <input value={tradeConfirmation} onChange={e => setTConf(e.target.value)} style={is} placeholder="e.g. 700007065" />
+              <div style={{ fontSize: 11, color: 'var(--text-light)', marginTop: 4 }}>
+                If this trade matches a single Empower confirmation, entering it here links this card
+                to the exact transfer detail — otherwise the dashboard falls back to matching by date,
+                which can mix up trades executed the same day.
+              </div>
+            </div>
             <div><label style={ls}>Trade Notes / Rationale</label><textarea value={tradeNotes} onChange={e => setTNo(e.target.value)} rows={3} style={{ ...is, resize: 'vertical' }} placeholder="Why did you make this trade?" /></div>
             <div><label style={ls}>Status</label><select value={tradeStatus} onChange={e => setTSt(e.target.value)} style={is}><option>Open</option><option>Closed</option></select></div>
             <button disabled={loading || !tradeNum || !tradeDesc} onClick={submitTrade}
@@ -451,8 +503,9 @@ export default function AdminTab({ data, onRefresh }) {
         <div className="card">
           <div className="card-header">Load Spreadsheet Data</div>
           <div style={{ fontSize: 14, color: 'var(--text-mid)', marginBottom: 16, lineHeight: 1.6 }}>
-            Upload your <strong>401k_Trade_Tracker</strong> xlsx file to repopulate all dashboard data.
-            This replaces existing data in Redis.
+            Upload your <strong>401k_Trade_Tracker</strong> xlsx file to add or correct data.
+            New rows are added, and rows with a matching key (confirmation #, ticker, or trade #)
+            update the existing entry — nothing already on the dashboard is deleted by this.
           </div>
           <div style={{ display: 'grid', gap: 16 }}>
             <div>
@@ -463,6 +516,44 @@ export default function AdminTab({ data, onRefresh }) {
               style={{ padding: 14, fontSize: 15, fontWeight: 600, color: 'white', background: loading ? 'var(--blue-400)' : 'var(--green-gain)', border: 'none', borderRadius: 'var(--radius)', cursor: loading ? 'wait' : 'pointer' }}>
               {loading ? 'Processing…' : 'Upload & Seed Redis'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {activeForm === 'delete' && (
+        <div className="card">
+          <div className="card-header">Delete Entry by Confirmation #</div>
+          <div style={{ fontSize: 14, color: 'var(--text-mid)', marginBottom: 16, lineHeight: 1.6 }}>
+            Removes a transaction and all its associated Transfer Detail / Dividend Detail rows,
+            everywhere they appear. Use this to clean up a bad entry — like a leftover example row
+            that slipped through from a template upload. This can't be undone.
+          </div>
+          <div style={{ display: 'grid', gap: 16 }}>
+            <div>
+              <label style={ls}>Confirmation #</label>
+              <input
+                value={deleteConf}
+                onChange={e => { setDeleteConf(e.target.value); setDeleteConfirmStep(false); }}
+                style={is}
+                placeholder="e.g. 700123456"
+              />
+            </div>
+            <button
+              disabled={loading || !deleteConf.trim()}
+              onClick={submitDelete}
+              style={{
+                padding: 14, fontSize: 15, fontWeight: 600, color: 'white',
+                background: loading ? 'var(--blue-400)' : (deleteConfirmStep ? 'var(--red-loss)' : 'var(--navy-800)'),
+                border: 'none', borderRadius: 'var(--radius)', cursor: loading ? 'wait' : 'pointer',
+              }}
+            >
+              {loading ? 'Deleting…' : deleteConfirmStep ? `Confirm delete of ${deleteConf}` : 'Delete Entry'}
+            </button>
+            {deleteConfirmStep && !loading && (
+              <div style={{ fontSize: 12, color: 'var(--red-loss)' }}>
+                Click again to permanently remove every row tagged with this confirmation number.
+              </div>
+            )}
           </div>
         </div>
       )}
