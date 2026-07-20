@@ -200,6 +200,23 @@ export default function AdminTab({ data, onRefresh }) {
       });
       const ytdSummary = {beginning_balance:beginBal,ending_balance:endBal,total_deposits:deps,total_fees:fees,total_dividends:divs,total_change:chg,sources,funds:fundYtd};
 
+      // Trade Decisions — optional sheet. A row with a blank Trade # or a
+      // description containing "EXAMPLE" is treated as a leftover template
+      // row and dropped server-side.
+      const tradeDecisionRows = XLSX.utils.sheet_to_json(wb.Sheets['Trade Decisions'] || {});
+      const trades = tradeDecisionRows.filter(r => r['Trade #'] != null && r['Trade #'] !== '').map(r => ({
+        trade_num: r['Trade #'],
+        date: parseDate(r['Date']),
+        description: r['Description'] || null,
+        total_sold: r['Total Sold'] != null ? parseFloat(r['Total Sold']) : null,
+        total_bought: r['Total Bought'] != null ? parseFloat(r['Total Bought']) : null,
+        funds_sold: r['Funds Sold'] || null,
+        funds_bought: r['Funds Bought'] || null,
+        status: r['Status'] || null,
+        notes: r['Notes'] || null,
+        macro_regime: r['Macro Regime'] || null,
+      }));
+
       // Fund Universe
       const fuRows = XLSX.utils.sheet_to_json(wb.Sheets['Fund Universe'] || {});
       const fundUniverse = fuRows.filter(r=>r['Fund Name']).map(r=>({num:r['#'],name:r['Fund Name'],ticker:r['Ticker']||'—',category:r['Category']||null,in_use:r['In Use (YTD)']||null,opening_balance:r['Opening Balance']!=null?parseFloat(r['Opening Balance']):null}));
@@ -223,7 +240,7 @@ export default function AdminTab({ data, onRefresh }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           account, transactions, transferDetail, dividendDetail,
-          ytdSummary, fundUniverse, weeklyBalance, fundPrices,
+          ytdSummary, fundUniverse, weeklyBalance, fundPrices, trades,
           counts: { transactions: transactions.length, transferDetail: transferDetail.length, dividendDetail: dividendDetail.length, ytdFunds: fundYtd.length, fundUniverse: fundUniverse.length, weeklyBalance: weeklyBalance.length, fundPrices: fundPrices.length },
         }),
       });
