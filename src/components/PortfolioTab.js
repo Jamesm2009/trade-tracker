@@ -28,7 +28,7 @@ const CATEGORY_TO_CLASS = {
   'Multi-Sector Bond': 'Bonds', 'TIPS/Inflation': 'Bonds', 'Global Bond': 'Bonds',
   'Large Growth': 'US-Equities', 'Large Value': 'US-Equities', 'Large Blend': 'US-Equities',
   'Mid Cap': 'US-Equities', 'Small Cap': 'US-Equities', 'S&P 500': 'US-Equities',
-  'Target Date 2060': 'Blended', 'REIT': 'Real Estate', 'Real Estate': 'Real Estate',
+  'Target Date 2060': 'Blended', 'Target Date 2035': 'Blended', 'REIT': 'Real Estate', 'Real Estate': 'Real Estate',
 };
 
 function fmt(n, decimals = 0) {
@@ -58,8 +58,14 @@ export default function PortfolioTab({ data }) {
   const ytdReturn = currentBalance - openingBalance;
   const ytdReturnPct = (ytdReturn / openingBalance) * 100;
   const newMoney = totalDeposits;
+  // "Market Return" (top card): total investment return excluding new contributions —
+  // this legitimately includes dividends, matching how "total return" is normally understood.
   const marketReturn = ytdReturn - newMoney;
   const marketReturnPct = (marketReturn / openingBalance) * 100;
+  // "Market Change" (waterfall row below): must exclude Dividends and Fees since those
+  // already have their own separate rows in the same waterfall — otherwise they get
+  // double-counted and the rows won't sum to the Ending Balance.
+  const pureMarketChange = marketReturn - totalDividends - totalFees;
 
   const categoryMap = useMemo(() => {
     const map = {};
@@ -92,20 +98,51 @@ export default function PortfolioTab({ data }) {
     return Object.values(classes).sort((a, b) => b.value - a.value);
   }, [allocData]);
 
-  // Fund-level market performance (recomputed dynamically so it reflects latest
-  // weekly balance updates, not just the stale value from spreadsheet seed time)
+  // Fund-level market performance. Transfers and dividends are computed live
+  // from the transfer/dividend detail logs (which stay current via the
+  // Admin/seed merge logic) rather than trusted from the YTD Summary snapshot,
+  // which only gets refreshed on a full re-seed. A Weekly Balance update only
+  // touches ending_balance — if we used the snapshot's "transfers" field here,
+  // any trade made since the last re-seed would get misattributed as a market
+  // gain/loss instead of being recognized as money moved in or out.
+  const { transferDetail, dividendDetail } = data;
+
+  const liveTransfersByTicker = useMemo(() => {
+    const map = {};
+    (transferDetail || []).forEach(t => {
+      const key = t.ticker && t.ticker !== '—' ? t.ticker : t.fund;
+      if (!key) return;
+      const signed = t.direction === 'Sell' ? -(t.amount || 0) : (t.amount || 0);
+      map[key] = (map[key] || 0) + signed;
+    });
+    return map;
+  }, [transferDetail]);
+
+  const liveDividendsByTicker = useMemo(() => {
+    const map = {};
+    (dividendDetail || []).forEach(d => {
+      const key = d.ticker && d.ticker !== '—' ? d.ticker : d.fund;
+      if (!key) return;
+      map[key] = (map[key] || 0) + (d.amount || 0);
+    });
+    return map;
+  }, [dividendDetail]);
+
   const fundPerformance = useMemo(() => {
     return fundData
       .filter(f => (f.ending_balance || 0) > 0 || (f.beginning_balance || 0) > 0)
       .map(f => {
+        const key = f.ticker && f.ticker !== '—' ? f.ticker : f.fund;
+        const transfers = liveTransfersByTicker[key] ?? (f.transfers || 0);
+        const dividends = liveDividendsByTicker[key] ?? (f.dividends || 0);
         const marketChange = (f.ending_balance || 0) - (f.beginning_balance || 0)
-          - (f.deposits || 0) - (f.transfers || 0) - (f.dividends || 0) - (f.fees || 0);
+          - (f.deposits || 0) - transfers - dividends - (f.fees || 0);
         return {
           fund: f.fund,
           ticker: f.ticker && f.ticker !== '—' ? f.ticker : f.fund,
           marketChange,
-          dividends: f.dividends || 0,
-          total: marketChange + (f.dividends || 0),
+          dividends,
+          total: marketChange + dividends,
         };
       })
       .filter(f => f.ticker !== f.fund || f.marketChange !== 0) // keep General Account only if it moved
@@ -154,7 +191,7 @@ export default function PortfolioTab({ data }) {
               { label: 'Contributions', value: '+' + fmt(totalDeposits), color: 'var(--blue-500)' },
               { label: 'Dividends', value: '+' + fmt(totalDividends), color: 'var(--green-gain)' },
               { label: 'Fees / Expenses', value: fmt(totalFees), color: 'var(--red-loss)' },
-              { label: 'Market Change', value: (marketReturn >= 0 ? '+' : '') + fmt(marketReturn), color: marketReturn >= 0 ? 'var(--green-gain)' : 'var(--red-loss)' },
+              { label: 'Market Change', value: (pureMarketChange >= 0 ? '+' : '') + fmt(pureMarketChange), color: pureMarketChange >= 0 ? 'var(--green-gain)' : 'var(--red-loss)' },
             ].map(row => (
               <div key={row.label} style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
