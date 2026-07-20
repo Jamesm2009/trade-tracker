@@ -47,8 +47,14 @@ export default function TradesTab({ data }) {
         const isOpen = trade.status && trade.status.toLowerCase().includes('open');
         const isExpanded = expanded === trade.trade_num;
 
-        // Find related transfers
+        // Find related transfers: match by confirmation # when the trade has
+        // one (exact), otherwise fall back to same-day date matching (this
+        // fallback can pull in transfers from a different trade executed the
+        // same day — logging a confirmation # avoids that ambiguity).
         const relatedTransfers = (transferDetail || []).filter(td => {
+          if (trade.confirmation) {
+            return String(td.confirmation) === String(trade.confirmation);
+          }
           if (!td.date || !trade.date) return false;
           const tdDate = new Date(td.date).toDateString();
           const trDate = new Date(trade.date).toDateString();
@@ -180,6 +186,11 @@ export default function TradesTab({ data }) {
                   }}
                 >
                   {isExpanded ? '▾ Hide' : '▸ Show'} transfer detail ({relatedTransfers.length} lines)
+                  {!trade.confirmation && (
+                    <span style={{ fontWeight: 400, color: 'var(--text-light)', marginLeft: 6 }}>
+                      (matched by date — may include another trade executed the same day)
+                    </span>
+                  )}
                 </button>
 
                 {isExpanded && (
