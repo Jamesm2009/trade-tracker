@@ -1,5 +1,5 @@
 /**
- * Seed script — parses 401k_Trade_Tracker_v12_1.xlsx and loads into Upstash Redis.
+ * Seed script — parses 401k_Trade_Tracker_v12_1.xlsx and loads into Upstash Redis. v2
  * 
  * Usage: UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... node seed.js [path-to-xlsx]
  * 
