@@ -18,7 +18,41 @@ export default function FundsTab({ data }) {
     return (ytdSummary?.funds || []).filter(f => f.ending_balance > 0 || f.beginning_balance > 0);
   }, [ytdSummary]);
 
-  const activeFund = funds.find(f => f.ticker === selectedFund) || null;
+  // Live transfers/dividends per ticker, computed the same way as the Portfolio
+  // tab's Fund Performance card — this stays current between full re-seeds,
+  // unlike the YTD Summary snapshot fields (activeFund.transfers/dividends),
+  // which only refresh when the spreadsheet is re-uploaded.
+  const liveTransfersByTicker = useMemo(() => {
+    const map = {};
+    (transferDetail || []).forEach(t => {
+      const key = t.ticker && t.ticker !== '—' ? t.ticker : t.fund;
+      if (!key) return;
+      const signed = t.direction === 'Sell' ? -(t.amount || 0) : (t.amount || 0);
+      map[key] = (map[key] || 0) + signed;
+    });
+    return map;
+  }, [transferDetail]);
+
+  const liveDividendsByTicker = useMemo(() => {
+    const map = {};
+    (dividendDetail || []).forEach(d => {
+      const key = d.ticker && d.ticker !== '—' ? d.ticker : d.fund;
+      if (!key) return;
+      map[key] = (map[key] || 0) + (d.amount || 0);
+    });
+    return map;
+  }, [dividendDetail]);
+
+  const activeFundRaw = funds.find(f => f.ticker === selectedFund) || null;
+  const activeFund = useMemo(() => {
+    if (!activeFundRaw) return null;
+    const key = activeFundRaw.ticker && activeFundRaw.ticker !== '—' ? activeFundRaw.ticker : activeFundRaw.fund;
+    const transfers = liveTransfersByTicker[key] ?? (activeFundRaw.transfers || 0);
+    const dividends = liveDividendsByTicker[key] ?? (activeFundRaw.dividends || 0);
+    const change = (activeFundRaw.ending_balance || 0) - (activeFundRaw.beginning_balance || 0)
+      - (activeFundRaw.deposits || 0) - transfers - dividends - (activeFundRaw.fees || 0);
+    return { ...activeFundRaw, transfers, dividends, change };
+  }, [activeFundRaw, liveTransfersByTicker, liveDividendsByTicker]);
 
   // Transfer activity for selected fund
   const fundTransfers = useMemo(() => {
