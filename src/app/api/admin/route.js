@@ -88,7 +88,7 @@ export async function POST(request) {
         if (wIdx >= 0) wbl[wIdx] = newEntry; else wbl.push(newEntry);
         await redis.set(key('weekly_balance'), wbl);
 
-        // Optional: capture a benchmark fund price snapshot (e.g. TRRJX) for the performance chart
+        // Optional: capture a benchmark fund price snapshot (e.g. TRRlX) for the performance chart
         if (payload.benchmark_ticker && payload.benchmark_price) {
           const fp = (await safeGet(key('fund_prices'))) || [];
           const fIdx = fp.findIndex(f => f.date === payload.date);
