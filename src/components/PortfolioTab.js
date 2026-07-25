@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { fmtDate } from '@/lib/format';
+import { fundKey } from '@/lib/fundKey';
 import PerformanceCharts from './PerformanceCharts';
 
 const PIE_COLORS = [
@@ -110,7 +111,7 @@ export default function PortfolioTab({ data }) {
   const liveTransfersByTicker = useMemo(() => {
     const map = {};
     (transferDetail || []).forEach(t => {
-      const key = t.ticker && t.ticker !== '—' ? t.ticker : t.fund;
+      const key = fundKey(t);
       if (!key) return;
       const signed = t.direction === 'Sell' ? -(t.amount || 0) : (t.amount || 0);
       map[key] = (map[key] || 0) + signed;
@@ -121,7 +122,7 @@ export default function PortfolioTab({ data }) {
   const liveDividendsByTicker = useMemo(() => {
     const map = {};
     (dividendDetail || []).forEach(d => {
-      const key = d.ticker && d.ticker !== '—' ? d.ticker : d.fund;
+      const key = fundKey(d);
       if (!key) return;
       map[key] = (map[key] || 0) + (d.amount || 0);
     });
@@ -132,7 +133,7 @@ export default function PortfolioTab({ data }) {
     return fundData
       .filter(f => (f.ending_balance || 0) > 0 || (f.beginning_balance || 0) > 0)
       .map(f => {
-        const key = f.ticker && f.ticker !== '—' ? f.ticker : f.fund;
+        const key = fundKey(f);
         const transfers = liveTransfersByTicker[key] ?? (f.transfers || 0);
         const dividends = liveDividendsByTicker[key] ?? (f.dividends || 0);
         const marketChange = (f.ending_balance || 0) - (f.beginning_balance || 0)
