@@ -172,7 +172,7 @@ export async function POST(request) {
 
     const mergedWeekly = mergeWeeklyBalance(data.weeklyBalance, existingWeekly);
     const mergedPrices = mergeFundPrices(data.fundPrices, existingPrices);
-    const mergedTransactions = mergeLog(existingTransactions, transactions, r => r.confirmation || `${r.date}|${r.type}|${r.amount}`);
+    const mergedTransactions = mergeLog(existingTransactions, transactions, r => r.confirmation ? `${r.confirmation}|${r.type}` : `${r.date}|${r.type}|${r.amount}`);
     const mergedTransferDetail = mergeLog(existingTransferDetail, transferDetail, r => `${r.confirmation}|${r.source}|${r.ticker || r.fund}|${r.direction}`);
     const mergedDividendDetail = mergeLog(existingDividendDetail, dividendDetail, r => `${r.confirmation}|${r.source}|${r.ticker || r.fund}`);
     const mergedFundUniverse = mergeByTicker(existingFundUniverse, fundUniverse);
