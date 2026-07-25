@@ -115,6 +115,32 @@ export async function POST(request) {
         return NextResponse.json({ success: true });
       }
 
+      case 'delete_by_confirmation': {
+        const conf = String(payload.confirmation || '').trim();
+        if (!conf) {
+          return NextResponse.json({ error: 'No confirmation number provided' }, { status: 400 });
+        }
+
+        const removed = { transactions: 0, transferDetail: 0, dividendDetail: 0 };
+
+        const txns = (await safeGet(key('transactions'))) || [];
+        const keptTxns = txns.filter(t => String(t.confirmation || '') !== conf);
+        removed.transactions = txns.length - keptTxns.length;
+        if (removed.transactions > 0) await redis.set(key('transactions'), keptTxns);
+
+        const td = (await safeGet(key('transfer_detail'))) || [];
+        const keptTd = td.filter(t => String(t.confirmation || '') !== conf);
+        removed.transferDetail = td.length - keptTd.length;
+        if (removed.transferDetail > 0) await redis.set(key('transfer_detail'), keptTd);
+
+        const dd = (await safeGet(key('dividend_detail'))) || [];
+        const keptDd = dd.filter(d => String(d.confirmation || '') !== conf);
+        removed.dividendDetail = dd.length - keptDd.length;
+        if (removed.dividendDetail > 0) await redis.set(key('dividend_detail'), keptDd);
+
+        return NextResponse.json({ success: true, removed });
+      }
+
       default:
         return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
     }
