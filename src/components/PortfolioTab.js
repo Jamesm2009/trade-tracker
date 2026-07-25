@@ -213,7 +213,12 @@ export default function PortfolioTab({ data }) {
 
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <div className="card-header" style={{ marginBottom: 0 }}>Current Allocation</div>
+            <div>
+              <div className="card-header" style={{ marginBottom: 0 }}>Current Allocation</div>
+              <div style={{ fontSize: 11, color: 'var(--text-light)', marginTop: 2 }}>
+                As of {fmtDate(account?.as_of_date)}
+              </div>
+            </div>
             <div style={{ display: 'flex', gap: 4 }}>
               {[
                 { id: 'fund', label: 'By Fund' },
