@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { fmtDate } from '@/lib/format';
+import { fundKey } from '@/lib/fundKey';
 
 function fmt(n) {
   if (n == null) return '—';
@@ -25,7 +26,7 @@ export default function FundsTab({ data }) {
   const liveTransfersByTicker = useMemo(() => {
     const map = {};
     (transferDetail || []).forEach(t => {
-      const key = t.ticker && t.ticker !== '—' ? t.ticker : t.fund;
+      const key = fundKey(t);
       if (!key) return;
       const signed = t.direction === 'Sell' ? -(t.amount || 0) : (t.amount || 0);
       map[key] = (map[key] || 0) + signed;
@@ -36,7 +37,7 @@ export default function FundsTab({ data }) {
   const liveDividendsByTicker = useMemo(() => {
     const map = {};
     (dividendDetail || []).forEach(d => {
-      const key = d.ticker && d.ticker !== '—' ? d.ticker : d.fund;
+      const key = fundKey(d);
       if (!key) return;
       map[key] = (map[key] || 0) + (d.amount || 0);
     });
@@ -46,7 +47,7 @@ export default function FundsTab({ data }) {
   const activeFundRaw = funds.find(f => f.ticker === selectedFund) || null;
   const activeFund = useMemo(() => {
     if (!activeFundRaw) return null;
-    const key = activeFundRaw.ticker && activeFundRaw.ticker !== '—' ? activeFundRaw.ticker : activeFundRaw.fund;
+    const key = fundKey(activeFundRaw);
     const transfers = liveTransfersByTicker[key] ?? (activeFundRaw.transfers || 0);
     const dividends = liveDividendsByTicker[key] ?? (activeFundRaw.dividends || 0);
     const change = (activeFundRaw.ending_balance || 0) - (activeFundRaw.beginning_balance || 0)
@@ -56,11 +57,12 @@ export default function FundsTab({ data }) {
 
   // Transfer activity for selected fund
   const fundTransfers = useMemo(() => {
-    if (!selectedFund || !transferDetail) return [];
+    if (!activeFundRaw || !transferDetail) return [];
+    const targetKey = fundKey(activeFundRaw);
     return transferDetail
-      .filter(td => td.ticker === selectedFund || td.fund_name === activeFund?.fund)
+      .filter(td => fundKey(td) === targetKey)
       .sort((a, b) => new Date(a.date) - new Date(b.date));
-  }, [selectedFund, transferDetail, activeFund]);
+  }, [activeFundRaw, transferDetail]);
 
   // Group transfers by month for chart
   const transfersByMonth = useMemo(() => {
@@ -77,9 +79,10 @@ export default function FundsTab({ data }) {
 
   // Dividends for selected fund
   const fundDividends = useMemo(() => {
-    if (!selectedFund || !dividendDetail) return [];
-    return dividendDetail.filter(dd => dd.ticker === selectedFund);
-  }, [selectedFund, dividendDetail]);
+    if (!activeFundRaw || !dividendDetail) return [];
+    const targetKey = fundKey(activeFundRaw);
+    return dividendDetail.filter(dd => fundKey(dd) === targetKey);
+  }, [activeFundRaw, dividendDetail]);
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
