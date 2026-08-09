@@ -99,13 +99,23 @@ export default function PortfolioTab({ data }) {
     return Object.values(classes).sort((a, b) => b.value - a.value);
   }, [allocData]);
 
-  // Fund-level market performance. Transfers and dividends are computed live
-  // from the transfer/dividend detail logs (which stay current via the
-  // Admin/seed merge logic) rather than trusted from the YTD Summary snapshot,
-  // which only gets refreshed on a full re-seed. A Weekly Balance update only
-  // touches ending_balance — if we used the snapshot's "transfers" field here,
-  // any trade made since the last re-seed would get misattributed as a market
-  // gain/loss instead of being recognized as money moved in or out.
+  // Fund-level market performance. Transfers/dividends prefer the YTD Summary
+  // snapshot (f.transfers / f.dividends) whenever it's been populated for a
+  // fund -- that's the full-year figure from a periodic "Fund | Ticker" table
+  // upload (e.g. pulled straight from Empower's own "Activity by Investment
+  // Option" report). Live computation from the transfer/dividend detail logs
+  // is only a fallback for a fund that's never had a snapshot row at all.
+  //
+  // This used to run the other way (live first, snapshot as fallback), to
+  // avoid a Weekly Balance update (which only touches ending_balance)
+  // silently stranding a trade as unattributed market gain/loss between full
+  // re-seeds. But once a fund has SOME transfer detail logged (e.g. just its
+  // last few weeks of trades) without the FULL year, live computation stops
+  // being a safe fallback -- it goes from "nothing" to "a number", so `??`
+  // no longer defers to the snapshot, and a fund's full-year transfers get
+  // silently understated, inflating its apparent market gain. Preferring the
+  // snapshot avoids that; the trade-off is a trade made after the last
+  // snapshot refresh won't show in Market Change until the next one.
   const { transferDetail, dividendDetail } = data;
 
   const liveTransfersByTicker = useMemo(() => {
@@ -134,8 +144,10 @@ export default function PortfolioTab({ data }) {
       .filter(f => (f.ending_balance || 0) > 0 || (f.beginning_balance || 0) > 0)
       .map(f => {
         const key = fundKey(f);
-        const transfers = liveTransfersByTicker[key] ?? (f.transfers || 0);
-        const dividends = liveDividendsByTicker[key] ?? (f.dividends || 0);
+        const transfers = (f.transfers !== undefined && f.transfers !== null)
+          ? f.transfers : (liveTransfersByTicker[key] ?? 0);
+        const dividends = (f.dividends !== undefined && f.dividends !== null)
+          ? f.dividends : (liveDividendsByTicker[key] ?? 0);
         const marketChange = (f.ending_balance || 0) - (f.beginning_balance || 0)
           - (f.deposits || 0) - transfers - dividends - (f.fees || 0);
         return {
