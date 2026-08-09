@@ -99,7 +99,7 @@ export default function PortfolioTab({ data }) {
     return Object.values(classes).sort((a, b) => b.value - a.value);
   }, [allocData]);
 
-  // Fund-level market performance. Transfers/dividends prefer the YTD Summary
+  // Fund-level market performance. Transfers/dividends prefer the YTD Summary v.2
   // snapshot (f.transfers / f.dividends) whenever it's been populated for a
   // fund -- that's the full-year figure from a periodic "Fund | Ticker" table
   // upload (e.g. pulled straight from Empower's own "Activity by Investment
@@ -348,3 +348,4 @@ export default function PortfolioTab({ data }) {
     </div>
   );
 }
+
