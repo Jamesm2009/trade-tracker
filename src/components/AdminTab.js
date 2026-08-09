@@ -7,10 +7,31 @@ export default function AdminTab({ data, onRefresh }) {
   const [loading, setLoading] = useState(false);
   const fileRef = useRef(null);
 
-  // Get active funds from ytdSummary
+  // Get all known funds from ytdSummary, so the Weekly Balance form can
+  // update ANY fund — not just ones currently holding a balance.
+  //
+  // This used to filter to `ending_balance > 0`. That was fine for display,
+  // but this same filtered list is what gets sent back and saved as the
+  // COMPLETE fund list (see submitBalance below / update_balance_full in
+  // the API route, which does `ytd.funds = payload.funds`, a full
+  // replacement, not a merge). So the moment a fund like General Account
+  // dropped to $0, it vanished from this form — and the next Weekly
+  // Balance submit permanently deleted its record instead of just hiding
+  // it, since it was never included in what got saved back.
+  //
+  // Keeping every known fund here (sorted so active ones stay on top,
+  // dormant $0 ones sink to the bottom) means nothing gets silently
+  // deleted, and General Account specifically is always present to edit —
+  // even if it's never been recorded before — since it's the account's
+  // cash sweep and routinely cycles between $0 and holding a balance.
   const activeFunds = useMemo(() => {
-    return (data?.ytdSummary?.funds || []).filter(f => f.ending_balance > 0)
-      .sort((a, b) => b.ending_balance - a.ending_balance);
+    const funds = data?.ytdSummary?.funds || [];
+    const isGeneralAccount = f => ['General Account'].includes((f.fund || '').trim()) || ['General Account'].includes((f.ticker || '').trim());
+    const hasGeneralAccount = funds.some(isGeneralAccount);
+    const withGeneralAccount = hasGeneralAccount
+      ? funds
+      : [...funds, { fund: 'General Account', ticker: '—', ending_balance: 0 }];
+    return [...withGeneralAccount].sort((a, b) => (b.ending_balance || 0) - (a.ending_balance || 0));
   }, [data]);
 
   // Balance form state
