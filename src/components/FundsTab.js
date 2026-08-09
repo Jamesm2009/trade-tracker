@@ -48,8 +48,13 @@ export default function FundsTab({ data }) {
   const activeFund = useMemo(() => {
     if (!activeFundRaw) return null;
     const key = fundKey(activeFundRaw);
-    const transfers = liveTransfersByTicker[key] ?? (activeFundRaw.transfers || 0);
-    const dividends = liveDividendsByTicker[key] ?? (activeFundRaw.dividends || 0);
+    // See PortfolioTab.js fundPerformance for why the snapshot (f.transfers/
+    // f.dividends) takes precedence over live-computed transfer/dividend
+    // detail here -- same fund, same numbers, should never disagree.
+    const transfers = (activeFundRaw.transfers !== undefined && activeFundRaw.transfers !== null)
+      ? activeFundRaw.transfers : (liveTransfersByTicker[key] ?? 0);
+    const dividends = (activeFundRaw.dividends !== undefined && activeFundRaw.dividends !== null)
+      ? activeFundRaw.dividends : (liveDividendsByTicker[key] ?? 0);
     const change = (activeFundRaw.ending_balance || 0) - (activeFundRaw.beginning_balance || 0)
       - (activeFundRaw.deposits || 0) - transfers - dividends - (activeFundRaw.fees || 0);
     return { ...activeFundRaw, transfers, dividends, change };
